@@ -8,48 +8,73 @@ SIM_LAT = 21.121556
 SIM_LON = 79.056389
 SIM_SAT_COUNT = 8
 
+def to_ddm_format(dd):
+    """Converts Decimal Degrees (DD) to NMEA Degrees Decimal Minutes (DDM) format."""
+    # Ensure latitude/longitude are positive for calculation
+    abs_dd = abs(dd)
+    
+    # Extract Degrees (DDD or DD)
+    degrees = int(abs_dd)
+    
+    # Calculate Minutes and Decimal Minutes (MM.MMMM)
+    minutes = (abs_dd - degrees) * 60
+    
+    # Format as string: e.g., '4043.8000' for Lat or '07400.9000' for Lon
+    # Longitude is often 3 digits for degrees
+    if abs_dd >= 100:
+        ddm_format = "{:03d}{:.4f}".format(degrees, minutes)
+    else:
+        ddm_format = "{:02d}{:.4f}".format(degrees, minutes)
+        
+    return ddm_format.replace('.', '') # NMEA standard often omits the decimal in DDM 
+                                      # but pynmea2 sometimes expects it, let's keep it clean
+                                      # and check the error again if it fails.
+                                      # For now, let's include the decimal point for pynmea2's parsing logic.
+    return "{:03d}{:.4f}".format(degrees, minutes)
+
+
 def generate_simulated_nmea():
     """Generates a continuous stream of simulated NMEA GPGGA sentences."""
     global SIM_LAT, SIM_LON
     
-    # We will simulate movement by slightly changing coordinates each iteration
-    # Small changes simulating movement (e.g., 0.00005 degrees is ~5.5 meters)
     LAT_STEP = 0.00005
     LON_STEP = 0.00003
     
     while True:
-        # 1. Update simulated position
         SIM_LAT += LAT_STEP 
         SIM_LON += LON_STEP
         
-        # 2. Get current time (required for NMEA timestamp)
         now = time.time()
         timestamp = time.strftime("%H%M%S.00", time.gmtime(now))
         
-        # 3. Create a valid GPGGA message object
-        # The fields are: timestamp, lat, lat_dir, lon, lon_dir, fix_quality, 
-        # num_sats, hdop, alt, alt_unit, geoid_sep, geoid_unit, dgps_age, dgps_id
-        msg = pynmea2.types.talker.GGA(
-            'GP', 
-            'GGA',
-            (timestamp, 
-            str(SIM_LAT), 'N', 
-            str(SIM_LON), 'W', 
-            '1', # Fix Quality (1 = GPS fix)
-            str(SIM_SAT_COUNT), 
-            '1.0', # HDOP
-            '100.0', 'M', # Altitude
-            '0.0', 'M', # Geoid Separation
-            '', '') # DGPS fields
-        )
+        # --- CRITICAL CHANGE: Format to DDM ---
+        lat_ddm = to_ddm_format(SIM_LAT)
+        lon_ddm = to_ddm_format(SIM_LON)
         
-        # Convert the message object back to the standard NMEA string with checksum
-        nmea_string = str(msg)
+        # Determine N/S and E/W indicators
+        lat_dir = 'N' if SIM_LAT >= 0 else 'S'
+        lon_dir = 'E' if SIM_LON >= 0 else 'W'
         
-        # 4. Yield the simulated string, just like the serial port would
-        yield nmea_string
+        # The fields are separated by commas
+        fields = [
+            'GGA',                      
+            timestamp,                  
+            lat_ddm, lat_dir,           # Latitude in DDM format
+            lon_ddm, lon_dir,           # Longitude in DDM format
+            '1',                        
+            str(SIM_SAT_COUNT),         
+            '1.0',                      
+            '100.0', 'M',               
+            '0.0', 'M',                 
+            '', ''                      
+        ]
         
-        # 5. Wait for a short time to simulate the GPS module's update rate
+        message_body = ",".join(fields)
+        raw_nmea = f"$GP{message_body}"
+        full_nmea_string = pynmea2.Sentence.checksum(raw_nmea) 
+        
+        yield full_nmea_string
+        
         time.sleep(0.5)
 
 # --- Class to emulate the serial connection for the main app ---
@@ -95,4 +120,4 @@ if __name__ == '__main__':
     mock_port = get_gps_data_source(use_mock=True)
     for i in range(10):
         raw_data = mock_port.readline()
-        MOTONAV_LOGGER.debug(f"Simulated NMEA: {raw_data.decode().strip()}")
+        print(f"Simulated NMEA: {raw_data.decode().strip()}")

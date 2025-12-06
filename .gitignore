@@ -7,3 +7,5 @@ __pycache__/
 *.mbtiles
 offline_maps/
 logs/
+cache/
+
