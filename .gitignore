@@ -1,0 +1,8 @@
+# Virtual Environment
+gpsenv/ 
+.DS_Store
+__pycache__/
+*.pyc
+# Specific files/folders we don't want to track
+*.mbtiles
+offline_maps/
