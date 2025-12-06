@@ -1,5 +1,7 @@
 import gpxpy
 from landez import MBTilesBuilder
+from motonav_logger import MOTONAV_LOGGER
+from motonav_exceptions import ConfigurationError
 
 # --- 1. Get Bounding Box from GPX (from your parse_gpx.py logic) ---
 def get_gpx_bbox(gpx_file_path):
@@ -9,7 +11,7 @@ def get_gpx_bbox(gpx_file_path):
     # gpxpy returns the overall bounds object
     bounds = gpx.get_bounds()
     if not bounds:
-        raise ValueError("GPX file is empty or has no bounds.")
+        raise ConfigurationError("GPX file is empty or has no bounds.")
 
     # Landez requires a standard bbox tuple: (min_lon, min_lat, max_lon, max_lat)
     bbox = (
@@ -23,28 +25,36 @@ def get_gpx_bbox(gpx_file_path):
 # --- 2. Download and Package Tiles ---
 def build_mbtiles(gpx_path, output_filepath, zoomlevels):
     # Get the bounding box of your route
-    bbox = get_gpx_bbox(gpx_path)
-    
-    print(f"Route Bounding Box: {bbox}")
-    print(f"Starting tile download for ZL {zoomlevels[0]} to {zoomlevels[-1]}...")
+    try:
+        bbox = get_gpx_bbox(gpx_path)
+    except Exception as e:
+        MOTONAV_LOGGER.error(f"Failed to extract bounding box: {e}")
+        raise
+
+    MOTONAV_LOGGER.info(f"Route Bounding Box: {bbox}")
+    MOTONAV_LOGGER.info(f"Starting tile download for ZL {zoomlevels[0]} to {zoomlevels[-1]}...")
     
     # Initialize the MBTiles Builder
     # Using the standard OpenStreetMap tile server. 
     # NOTE: Be respectful of their usage policy (don't abuse for bulk download)
-    mb = MBTilesBuilder(
-        tiles_url="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-        filepath=output_filepath
-    )
-    
-    # Download coverage based on BBox and Zoom Levels
-    mb.add_coverage(
-        bbox=bbox, 
-        zoomlevels=zoomlevels
-    )
-    
-    # Run the download and packaging process
-    mb.run()
-    print(f"\n✅ MBTiles file created successfully at: {output_filepath}")
+    try:
+        mb = MBTilesBuilder(
+            tiles_url="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            filepath=output_filepath
+        )
+        
+        # Download coverage based on BBox and Zoom Levels
+        mb.add_coverage(
+            bbox=bbox, 
+            zoomlevels=zoomlevels
+        )
+        
+        # Run the download and packaging process
+        mb.run()
+        MOTONAV_LOGGER.info(f"MBTiles file created successfully at: {output_filepath}")
+    except Exception as e:
+        MOTONAV_LOGGER.error(f"Detailed error during mbtiles generation: {e}")
+        raise ConfigurationError(f"Failed to generate MBTiles: {e}")
 
 # --- 3. Execution ---
 if __name__ == "__main__":
@@ -55,4 +65,7 @@ if __name__ == "__main__":
     # You may need to create a dummy test_route.gpx file with a short path here
     # E.g., a path between two major cities for a good BBox
     
-    build_mbtiles(GPX_FILE, MBTILES_FILE, ZOOM_LEVELS)
+    try:
+        build_mbtiles(GPX_FILE, MBTILES_FILE, ZOOM_LEVELS)
+    except ConfigurationError as e:
+        MOTONAV_LOGGER.critical(f"Map Build Failed: {e}")

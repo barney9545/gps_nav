@@ -6,3 +6,4 @@ __pycache__/
 # Specific files/folders we don't want to track
 *.mbtiles
 offline_maps/
+logs/
